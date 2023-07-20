@@ -23,7 +23,15 @@ type PIDController struct {
 func NewPIDController(
 	KP float64, KI float64, KD float64, target float64, DT float64, maxControl float64, minControl float64,
 ) *PIDController {
-	return &PIDController{KP: KP, KI: KI, KD: KD, Target: target, DT: DT, MaxControl: maxControl, MinControl: minControl}
+	return &PIDController{
+		KP:         KP,
+		KI:         KI,
+		KD:         KD,
+		Target:     target,
+		DT:         DT,
+		MaxControl: maxControl,
+		MinControl: minControl,
+	}
 }
 
 func (pc *PIDController) Control(current float64) float64 {
