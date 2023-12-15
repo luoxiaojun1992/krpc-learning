@@ -55,7 +55,7 @@ func (pc *PIDController) Control(current float64) float64 {
 func main() {
 	// Connect to the kRPC server with all default parameters.
 	client := krpcgo.DefaultKRPCClient()
-	client.Host = "192.168.31.90"
+	client.Host = "127.0.0.1"
 	if err := client.Connect(context.Background()); err != nil {
 		panic(err)
 	}
