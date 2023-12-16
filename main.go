@@ -7,6 +7,7 @@ import (
 
 	krpcgo "github.com/atburke/krpc-go"
 	"github.com/atburke/krpc-go/spacecenter"
+	"github.com/atburke/krpc-go/types"
 )
 
 type PIDController struct {
@@ -22,7 +23,7 @@ type PIDController struct {
 }
 
 func NewPIDController(
-	KP float64, KI float64, KD float64, target float64, DT float64, maxControl float64, minControl float64,
+	KP float64, KI float64, KD float64, target float64, DT float64, minControl, maxControl float64,
 ) *PIDController {
 	return &PIDController{
 		KP:         KP,
@@ -44,12 +45,51 @@ func (pc *PIDController) Control(current float64) float64 {
 	pc.SumE += e
 
 	if control > pc.MaxControl {
-		return 1.0
+		return pc.MaxControl
 	} else if control < pc.MinControl {
-		return 0
+		return pc.MinControl
 	} else {
 		return control
 	}
+}
+
+func launchPadReferenceFrame(body *spacecenter.CelestialBody, bodyReferenceFrame *spacecenter.ReferenceFrame) *spacecenter.ReferenceFrame {
+	lat := -0.0972
+	lon := -74.5577
+	temp1, err := bodyReferenceFrame.CreateRelative(types.Tuple3[float64, float64, float64]{},
+		types.Tuple4[float64, float64, float64, float64]{A: 0.0, B: math.Sin(-lon / 2.0 * math.Pi / 180.0), C: 0.0, D: math.Cos(-lon / 2.0 * math.Pi / 180.0)},
+		types.Tuple3[float64, float64, float64]{},
+		types.Tuple3[float64, float64, float64]{},
+	)
+	if err != nil {
+		panic(err)
+	}
+	temp2, err := temp1.CreateRelative(types.Tuple3[float64, float64, float64]{},
+		types.Tuple4[float64, float64, float64, float64]{A: 0.0, B: 0.0, C: math.Sin(lat / 2.0 * math.Pi / 180.0), D: math.Cos(lat / 2.0 * math.Pi / 180.0)},
+		types.Tuple3[float64, float64, float64]{},
+		types.Tuple3[float64, float64, float64]{},
+	)
+	if err != nil {
+		panic(err)
+	}
+	height, err := body.SurfaceHeight(lat, lon)
+	if err != nil {
+		panic(err)
+	}
+	equatorialRadius, err := body.EquatorialRadius()
+	if err != nil {
+		panic(err)
+	}
+	height += float64(equatorialRadius)
+	targetFrame, err := temp2.CreateRelative(types.Tuple3[float64, float64, float64]{A: height, B: 0.0, C: 0.0},
+		types.Tuple4[float64, float64, float64, float64]{},
+		types.Tuple3[float64, float64, float64]{},
+		types.Tuple3[float64, float64, float64]{},
+	)
+	if err != nil {
+		panic(err)
+	}
+	return targetFrame
 }
 
 func main() {
@@ -70,6 +110,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	control.SetInputMode(spacecenter.ControlInputMode_Override)
 	orbit, err := vessel.Orbit()
 	if err != nil {
 		panic(err)
@@ -78,14 +119,25 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	referenceFrame, err := body.ReferenceFrame()
+	bodyReferenceFrame, err := body.ReferenceFrame()
 	if err != nil {
 		panic(err)
 	}
-	f, err := vessel.Flight(referenceFrame)
+	launchPadReferenceFrame := launchPadReferenceFrame(body, bodyReferenceFrame)
+
+	f, err := vessel.Flight(bodyReferenceFrame)
 	if err != nil {
 		panic(err)
 	}
+
+	// referenceFrame, err := vessel.ReferenceFrame()
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// craft, err := vessel.Flight(referenceFrame)
+	// if err != nil {
+	// 	panic(err)
+	// }
 
 	if err := control.SetSAS(true); err != nil {
 		panic(err)
@@ -99,7 +151,7 @@ func main() {
 
 	// Climbe to 100m
 	climbController := NewPIDController(
-		0.6, 0.003, 0.05, 100.0, 0.01, 0.0, 1.0,
+		0.6, 0.0, 0.6, 100.0, 0.001, 0.0, 1.0,
 	)
 	for {
 		alt, err := f.SurfaceAltitude()
@@ -107,7 +159,7 @@ func main() {
 			panic(err)
 		}
 
-		if alt >= 100.0 {
+		if math.Abs(alt-100.0) <= 1.0 {
 			break
 		}
 
@@ -116,92 +168,68 @@ func main() {
 			panic(err)
 		}
 
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(1 * time.Millisecond)
 	}
 
-	// Move 30m
+	// Move 100m
 	println("Moving")
-	var pitch, yaw, roll float64
-	startPos, err := vessel.Position(referenceFrame)
+	startPos, err := vessel.Position(launchPadReferenceFrame)
 	if err != nil {
 		panic(err)
 	}
-	pitchController := NewPIDController(
-		0.6, 0.05, 0.1, startPos.A+300.0, 0.01, -10, 10,
+	aController := NewPIDController(
+		0.7, 0.3, 0.6, startPos.A-100.0, 0.001, -0.5, 0.5,
 	)
-	yawController := NewPIDController(
-		0.6, 0.05, 0.1, startPos.B, 0.01, -10, 10,
+	cController := NewPIDController(
+		0.7, 0.3, 0.6, startPos.C, 0.001, -0.5, 0.5,
 	)
-	rollController := NewPIDController(
-		0.6, 0.05, 0.1, 0.0, 0.01, -10, 10,
-	)
+	// rollController := NewPIDController(
+	// 	0.7, 0.3, 0.6, 0.0, 0.001, -0.5, 0.5,
+	// )
 	for {
 		alt, err := f.SurfaceAltitude()
 		if err != nil {
 			panic(err)
 		}
-		currentPos, err := vessel.Position(referenceFrame)
+		currentPos, err := vessel.Position(launchPadReferenceFrame)
 		if err != nil {
 			panic(err)
 		}
-		pitchOffset := startPos.A + 300.0 - currentPos.A
-		yawOffset := startPos.B - currentPos.B
-		if math.Abs(pitchOffset) <= 50.0 && math.Abs(yawOffset) <= 50.0 {
+		aOffset := startPos.A - 100.0 - currentPos.A
+		cOffset := startPos.C - currentPos.C
+		if math.Abs(aOffset) <= 5.0 && math.Abs(cOffset) <= 5.0 {
 			break
 		}
-		println(pitchOffset, yawOffset)
-		currentRoll, err := f.Roll()
-		if err != nil {
-			panic(err)
-		}
+		// currentRoll, err := craft.Roll()
+		// if err != nil {
+		// 	panic(err)
+		// }
 
-		newPitch := pitchController.Control(currentPos.A)
-		pitchDelta := newPitch - pitch
-		if pitchDelta > 1.0 {
-			pitchDelta = 1.0
-		} else if pitchDelta < -1.0 {
-			pitchDelta = -1.0
-		}
-		if err := control.SetPitch(float32(pitchDelta)); err != nil {
+		newRight := aController.Control(currentPos.A)
+		if err := control.SetRight(float32(newRight)); err != nil {
 			panic(err)
 		}
-		pitch += pitchDelta
-		newYaw := yawController.Control(currentPos.B)
-		yawDelta := newYaw - yaw
-		if yawDelta > 1.0 {
-			yawDelta = 1.0
-		} else if yawDelta < -1.0 {
-			yawDelta = -1.0
-		}
-		if err := control.SetYaw(float32(yawDelta)); err != nil {
+		newUp := cController.Control(currentPos.C)
+		if err := control.SetUp(-1.0 * float32(newUp)); err != nil {
 			panic(err)
 		}
-		yaw += yawDelta
-
-		newRoll := rollController.Control(float64(currentRoll))
-		rollDelta := newRoll - roll
-		if rollDelta > 1.0 {
-			rollDelta = 1.0
-		} else if rollDelta < -1.0 {
-			rollDelta = -1.0
-		}
-		if err := control.SetRoll(float32(rollDelta)); err != nil {
-			panic(err)
-		}
-		roll += rollDelta
+		// newRoll := rollController.Control(float64(currentRoll))
+		// if err := control.SetRoll(float32(newRoll)); err != nil {
+		// 	panic(err)
+		// }
 
 		throttle := climbController.Control(alt)
 		if err := control.SetThrottle(float32(throttle)); err != nil {
 			panic(err)
 		}
 
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(1 * time.Millisecond)
 	}
 
 	// Landing
 	println("Landing")
 	landingController := NewPIDController(
-		0.6, 0.003, 0.05, -3, 0.01, 0.0, 1.0,
+		0.6, 0.0, 0.6, -3, 0.001, 0.0, 1.0,
 	)
 	for {
 		alt, err := f.SurfaceAltitude()
@@ -220,56 +248,13 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		currentPos, err := vessel.Position(referenceFrame)
-		if err != nil {
-			panic(err)
-		}
-		currentRoll, err := f.Roll()
-		if err != nil {
-			panic(err)
-		}
-
-		newPitch := pitchController.Control(currentPos.A)
-		pitchDelta := newPitch - pitch
-		if pitchDelta > 1 {
-			pitchDelta = 1
-		} else if pitchDelta < -1 {
-			pitchDelta = -1
-		}
-		if err := control.SetPitch(float32(pitchDelta)); err != nil {
-			panic(err)
-		}
-		pitch += pitchDelta
-		newYaw := yawController.Control(currentPos.B)
-		yawDelta := newYaw - yaw
-		if yawDelta > 1 {
-			yawDelta = 1
-		} else if yawDelta < -1 {
-			yawDelta = -1
-		}
-		if err := control.SetYaw(float32(yawDelta)); err != nil {
-			panic(err)
-		}
-		yaw += yawDelta
-
-		newRoll := rollController.Control(float64(currentRoll))
-		rollDelta := newRoll - roll
-		if rollDelta > 1.0 {
-			rollDelta = 1.0
-		} else if rollDelta < -1.0 {
-			rollDelta = -1.0
-		}
-		if err := control.SetRoll(float32(rollDelta)); err != nil {
-			panic(err)
-		}
-		roll += rollDelta
 
 		throttle := landingController.Control(speed)
 		if err := control.SetThrottle(float32(throttle)); err != nil {
 			panic(err)
 		}
 
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(1 * time.Millisecond)
 	}
 
 	control.SetThrottle(0)
