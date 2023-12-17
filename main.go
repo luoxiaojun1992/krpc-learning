@@ -95,7 +95,7 @@ func launchPadReferenceFrame(body *spacecenter.CelestialBody, bodyReferenceFrame
 func main() {
 	// Connect to the kRPC server with all default parameters.
 	client := krpcgo.DefaultKRPCClient()
-	client.Host = "127.0.0.1"
+	client.Host = "192.168.31.90"
 	if err := client.Connect(context.Background()); err != nil {
 		panic(err)
 	}
@@ -130,11 +130,11 @@ func main() {
 		panic(err)
 	}
 
-	// referenceFrame, err := vessel.ReferenceFrame()
+	// surfaceReferenceFrame, err := vessel.SurfaceReferenceFrame()
 	// if err != nil {
 	// 	panic(err)
 	// }
-	// craft, err := vessel.Flight(referenceFrame)
+	// craft, err := vessel.Flight(surfaceReferenceFrame)
 	// if err != nil {
 	// 	panic(err)
 	// }
@@ -177,8 +177,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	aController := NewPIDController(
-		0.7, 0.3, 0.6, startPos.A-100.0, 0.001, -0.5, 0.5,
+	bController := NewPIDController(
+		0.7, 0.3, 0.6, startPos.B, 0.001, -0.5, 0.5,
 	)
 	cController := NewPIDController(
 		0.7, 0.3, 0.6, startPos.C, 0.001, -0.5, 0.5,
@@ -195,9 +195,9 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		aOffset := startPos.A - 100.0 - currentPos.A
+		bOffset := startPos.B - currentPos.B
 		cOffset := startPos.C - currentPos.C
-		if math.Abs(aOffset) <= 5.0 && math.Abs(cOffset) <= 5.0 {
+		if math.Abs(bOffset) <= 5.0 && math.Abs(cOffset) <= 5.0 {
 			break
 		}
 		// currentRoll, err := craft.Roll()
@@ -205,7 +205,7 @@ func main() {
 		// 	panic(err)
 		// }
 
-		newRight := aController.Control(currentPos.A)
+		newRight := bController.Control(currentPos.B)
 		if err := control.SetRight(float32(newRight)); err != nil {
 			panic(err)
 		}
@@ -229,7 +229,7 @@ func main() {
 	// Landing
 	println("Landing")
 	landingController := NewPIDController(
-		0.6, 0.0, 0.6, -3, 0.001, 0.0, 1.0,
+		0.8, 0.01, 0.03, -0.5, 0.001, 0.0, 1.0,
 	)
 	for {
 		alt, err := f.SurfaceAltitude()
@@ -253,6 +253,7 @@ func main() {
 		if err := control.SetThrottle(float32(throttle)); err != nil {
 			panic(err)
 		}
+		println(throttle)
 
 		time.Sleep(1 * time.Millisecond)
 	}
