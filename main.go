@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"math"
+	"os"
 	"time"
 
 	krpcgo "github.com/atburke/krpc-go"
@@ -95,7 +96,7 @@ func launchPadReferenceFrame(body *spacecenter.CelestialBody, bodyReferenceFrame
 func main() {
 	// Connect to the kRPC server with all default parameters.
 	client := krpcgo.DefaultKRPCClient()
-	client.Host = "192.168.31.90"
+	client.Host = os.Getenv("KRPC_PORT")
 	if err := client.Connect(context.Background()); err != nil {
 		panic(err)
 	}
